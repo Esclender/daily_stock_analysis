@@ -1,13 +1,13 @@
 # -*- coding: utf-8 -*-
 """
 ===================================
-A股自选股智能分析系统 - AI分析层
+Stock Analysis System - AI Analysis Layer
 ===================================
 
-职责：
-1. 封装 LLM 调用逻辑（通过 LiteLLM 统一调用 Gemini/Anthropic/OpenAI 等）
-2. 结合技术面和消息面生成分析报告
-3. 解析 LLM 响应为结构化 AnalysisResult
+Responsibilities:
+1. Encapsulate LLM call logic (via LiteLLM for Gemini/Anthropic/OpenAI, etc.)
+2. Generate analysis reports combining technical and news data
+3. Parse LLM responses into structured AnalysisResult objects
 """
 
 import json
@@ -70,16 +70,16 @@ def apply_placeholder_fill(result: "AnalysisResult", missing_fields: List[str]) 
         if field == "sentiment_score":
             result.sentiment_score = 50
         elif field == "operation_advice":
-            result.operation_advice = result.operation_advice or "待补充"
+            result.operation_advice = result.operation_advice or "Pending"
         elif field == "analysis_summary":
-            result.analysis_summary = result.analysis_summary or "待补充"
+            result.analysis_summary = result.analysis_summary or "Pending"
         elif field == "dashboard.core_conclusion.one_sentence":
             if not result.dashboard:
                 result.dashboard = {}
             if "core_conclusion" not in result.dashboard:
                 result.dashboard["core_conclusion"] = {}
             result.dashboard["core_conclusion"]["one_sentence"] = (
-                result.dashboard["core_conclusion"].get("one_sentence") or "待补充"
+                result.dashboard["core_conclusion"].get("one_sentence") or "Pending"
             )
         elif field == "dashboard.intelligence.risk_alerts":
             if not result.dashboard:
@@ -95,7 +95,7 @@ def apply_placeholder_fill(result: "AnalysisResult", missing_fields: List[str]) 
                 result.dashboard["battle_plan"] = {}
             if "sniper_points" not in result.dashboard["battle_plan"]:
                 result.dashboard["battle_plan"]["sniper_points"] = {}
-            result.dashboard["battle_plan"]["sniper_points"]["stop_loss"] = "待补充"
+            result.dashboard["battle_plan"]["sniper_points"]["stop_loss"] = "Pending"
 
 
 # ---------- chip_structure fallback (Issue #589) ----------
@@ -104,13 +104,13 @@ _CHIP_KEYS: tuple = ("profit_ratio", "avg_cost", "concentration", "chip_health")
 
 
 def _is_value_placeholder(v: Any) -> bool:
-    """True if value is empty or placeholder (N/A, 数据缺失, etc.)."""
+    """True if value is empty or placeholder (N/A, data unavailable, etc.)."""
     if v is None:
         return True
     if isinstance(v, (int, float)) and v == 0:
         return True
     s = str(v).strip().lower()
-    return s in ("", "n/a", "na", "数据缺失", "未知")
+    return s in ("", "n/a", "na", "data unavailable", "unknown")
 
 
 def _safe_float(v: Any, default: float = 0.0) -> float:
@@ -131,12 +131,12 @@ def _safe_float(v: Any, default: float = 0.0) -> float:
 def _derive_chip_health(profit_ratio: float, concentration_90: float) -> str:
     """Derive chip_health from profit_ratio and concentration_90."""
     if profit_ratio >= 0.9:
-        return "警惕"  # 获利盘极高
+        return "Caution"  # extremely high profit ratio
     if concentration_90 >= 0.25:
-        return "警惕"  # 筹码分散
+        return "Caution"  # chips too dispersed
     if concentration_90 < 0.15 and 0.3 <= profit_ratio < 0.9:
-        return "健康"  # 集中且获利比例适中
-    return "一般"
+        return "Healthy"  # concentrated with moderate profit ratio
+    return "Fair"
 
 
 def _build_chip_structure_from_data(chip_data: Any) -> Dict[str, Any]:
@@ -244,127 +244,127 @@ def get_stock_name_multi_source(
     data_manager = None
 ) -> str:
     """
-    多来源获取股票中文名称
+    Resolve stock name from multiple sources.
 
-    获取策略（按优先级）：
-    1. 从传入的 context 中获取（realtime 数据）
-    2. 从静态映射表 STOCK_NAME_MAP 获取
-    3. 从 DataFetcherManager 获取（各数据源）
-    4. 返回默认名称（股票+代码）
+    Resolution order (by priority):
+    1. From the passed context (realtime data)
+    2. From the static STOCK_NAME_MAP lookup table
+    3. From DataFetcherManager (data providers)
+    4. Fall back to "Stock <code>"
 
     Args:
-        stock_code: 股票代码
-        context: 分析上下文（可选）
-        data_manager: DataFetcherManager 实例（可选）
+        stock_code: Stock ticker code
+        context: Analysis context (optional)
+        data_manager: DataFetcherManager instance (optional)
 
     Returns:
-        股票中文名称
+        Stock name string
     """
-    # 1. 从上下文获取（实时行情数据）
+    # 1. From context (realtime quote data)
     if context:
-        # 优先从 stock_name 字段获取
+        # Prefer the stock_name field
         if context.get('stock_name'):
             name = context['stock_name']
-            if name and not name.startswith('股票'):
+            if name and not name.startswith('Stock'):
                 return name
 
-        # 其次从 realtime 数据获取
+        # Fall back to realtime data
         if 'realtime' in context and context['realtime'].get('name'):
             return context['realtime']['name']
 
-    # 2. 从静态映射表获取
+    # 2. From static lookup table
     if stock_code in STOCK_NAME_MAP:
         return STOCK_NAME_MAP[stock_code]
 
-    # 3. 从数据源获取
+    # 3. From data provider
     if data_manager is None:
         try:
             from data_provider.base import DataFetcherManager
             data_manager = DataFetcherManager()
         except Exception as e:
-            logger.debug(f"无法初始化 DataFetcherManager: {e}")
+            logger.debug(f"Failed to initialize DataFetcherManager: {e}")
 
     if data_manager:
         try:
             name = data_manager.get_stock_name(stock_code)
             if name:
-                # 更新缓存
+                # Update cache
                 STOCK_NAME_MAP[stock_code] = name
                 return name
         except Exception as e:
-            logger.debug(f"从数据源获取股票名称失败: {e}")
+            logger.debug(f"Failed to fetch stock name from data provider: {e}")
 
-    # 4. 返回默认名称
-    return f'股票{stock_code}'
+    # 4. Default fallback
+    return f'Stock {stock_code}'
 
 
 @dataclass
 class AnalysisResult:
     """
-    AI 分析结果数据类 - 决策仪表盘版
+    Analysis result dataclass - Decision Dashboard edition.
 
-    封装 Gemini 返回的分析结果，包含决策仪表盘和详细分析
+    Wraps the LLM response, including the decision dashboard and detailed analysis.
     """
     code: str
     name: str
 
-    # ========== 核心指标 ==========
-    sentiment_score: int  # 综合评分 0-100 (>70强烈看多, >60看多, 40-60震荡, <40看空)
-    trend_prediction: str  # 趋势预测：强烈看多/看多/震荡/看空/强烈看空
-    operation_advice: str  # 操作建议：买入/加仓/持有/减仓/卖出/观望
-    decision_type: str = "hold"  # 决策类型：buy/hold/sell（用于统计）
-    confidence_level: str = "中"  # 置信度：高/中/低
+    # ========== Core Indicators ==========
+    sentiment_score: int  # Composite score 0-100 (>70 Strong Buy, >60 Buy, 40-60 Neutral, <40 Sell)
+    trend_prediction: str  # Trend: Strong Buy / Buy / Neutral / Sell / Strong Sell
+    operation_advice: str  # Action: Buy / Add / Hold / Reduce / Sell / Wait & Watch
+    decision_type: str = "hold"  # Decision type: buy / hold / sell (for statistics)
+    confidence_level: str = "Medium"  # Confidence: High / Medium / Low
 
-    # ========== 决策仪表盘 (新增) ==========
-    dashboard: Optional[Dict[str, Any]] = None  # 完整的决策仪表盘数据
+    # ========== Decision Dashboard ==========
+    dashboard: Optional[Dict[str, Any]] = None  # Full decision dashboard data
 
-    # ========== 走势分析 ==========
-    trend_analysis: str = ""  # 走势形态分析（支撑位、压力位、趋势线等）
-    short_term_outlook: str = ""  # 短期展望（1-3日）
-    medium_term_outlook: str = ""  # 中期展望（1-2周）
+    # ========== Trend Analysis ==========
+    trend_analysis: str = ""  # Price action analysis (support, resistance, trend lines, etc.)
+    short_term_outlook: str = ""  # Short-term outlook (1–3 days)
+    medium_term_outlook: str = ""  # Medium-term outlook (1–2 weeks)
 
-    # ========== 技术面分析 ==========
-    technical_analysis: str = ""  # 技术指标综合分析
-    ma_analysis: str = ""  # 均线分析（多头/空头排列，金叉/死叉等）
-    volume_analysis: str = ""  # 量能分析（放量/缩量，主力动向等）
-    pattern_analysis: str = ""  # K线形态分析
+    # ========== Technical Analysis ==========
+    technical_analysis: str = ""  # Comprehensive technical indicator analysis
+    ma_analysis: str = ""  # MA analysis (bullish/bearish alignment, golden/death cross, etc.)
+    volume_analysis: str = ""  # Volume analysis (high/low volume, institutional activity, etc.)
+    pattern_analysis: str = ""  # Candlestick pattern analysis
 
-    # ========== 基本面分析 ==========
-    fundamental_analysis: str = ""  # 基本面综合分析
-    sector_position: str = ""  # 板块地位和行业趋势
-    company_highlights: str = ""  # 公司亮点/风险点
+    # ========== Fundamental Analysis ==========
+    fundamental_analysis: str = ""  # Comprehensive fundamental analysis
+    sector_position: str = ""  # Sector standing and industry trend
+    company_highlights: str = ""  # Company highlights / risk points
 
-    # ========== 情绪面/消息面分析 ==========
-    news_summary: str = ""  # 近期重要新闻/公告摘要
-    market_sentiment: str = ""  # 市场情绪分析
-    hot_topics: str = ""  # 相关热点话题
+    # ========== Sentiment / News Analysis ==========
+    news_summary: str = ""  # Recent important news / announcements summary
+    market_sentiment: str = ""  # Market sentiment analysis
+    hot_topics: str = ""  # Related hot topics
 
-    # ========== 综合分析 ==========
-    analysis_summary: str = ""  # 综合分析摘要
-    key_points: str = ""  # 核心看点（3-5个要点）
-    risk_warning: str = ""  # 风险提示
-    buy_reason: str = ""  # 买入/卖出理由
+    # ========== Comprehensive Analysis ==========
+    analysis_summary: str = ""  # Comprehensive analysis summary
+    key_points: str = ""  # Key takeaways (3–5 points)
+    risk_warning: str = ""  # Risk disclosure
+    buy_reason: str = ""  # Buy / sell rationale
 
-    # ========== 元数据 ==========
-    market_snapshot: Optional[Dict[str, Any]] = None  # 当日行情快照（展示用）
-    raw_response: Optional[str] = None  # 原始响应（调试用）
-    search_performed: bool = False  # 是否执行了联网搜索
-    data_sources: str = ""  # 数据来源说明
+    # ========== Metadata ==========
+    market_snapshot: Optional[Dict[str, Any]] = None  # Daily market snapshot (display use)
+    raw_response: Optional[str] = None  # Raw LLM response (debug use)
+    search_performed: bool = False  # Whether a web search was performed
+    data_sources: str = ""  # Data source description
     success: bool = True
     error_message: Optional[str] = None
 
-    # ========== 价格数据（分析时快照）==========
-    current_price: Optional[float] = None  # 分析时的股价
-    change_pct: Optional[float] = None     # 分析时的涨跌幅(%)
+    # ========== Price Snapshot (at analysis time) ==========
+    current_price: Optional[float] = None  # Stock price at analysis time
+    change_pct: Optional[float] = None     # Price change % at analysis time
 
-    # ========== 模型标记（Issue #528）==========
-    model_used: Optional[str] = None  # 分析使用的 LLM 模型（完整名，如 gemini/gemini-2.0-flash）
+    # ========== Model Tag (Issue #528) ==========
+    model_used: Optional[str] = None  # LLM model used (full name, e.g. gemini/gemini-2.0-flash)
 
-    # ========== 历史对比（Report Engine P0）==========
-    query_id: Optional[str] = None  # 本次分析 query_id，用于历史对比时排除本次记录
+    # ========== History Comparison (Report Engine P0) ==========
+    query_id: Optional[str] = None  # query_id for this analysis, used to exclude from history comparison
 
     def to_dict(self) -> Dict[str, Any]:
-        """转换为字典"""
+        """Convert to dictionary."""
         return {
             'code': self.code,
             'name': self.name,
@@ -373,7 +373,7 @@ class AnalysisResult:
             'operation_advice': self.operation_advice,
             'decision_type': self.decision_type,
             'confidence_level': self.confidence_level,
-            'dashboard': self.dashboard,  # 决策仪表盘数据
+            'dashboard': self.dashboard,
             'trend_analysis': self.trend_analysis,
             'short_term_outlook': self.short_term_outlook,
             'medium_term_outlook': self.medium_term_outlook,
@@ -401,13 +401,13 @@ class AnalysisResult:
         }
 
     def get_core_conclusion(self) -> str:
-        """获取核心结论（一句话）"""
+        """Return the one-sentence core conclusion."""
         if self.dashboard and 'core_conclusion' in self.dashboard:
             return self.dashboard['core_conclusion'].get('one_sentence', self.analysis_summary)
         return self.analysis_summary
 
     def get_position_advice(self, has_position: bool = False) -> str:
-        """获取持仓建议"""
+        """Return position-specific advice."""
         if self.dashboard and 'core_conclusion' in self.dashboard:
             pos_advice = self.dashboard['core_conclusion'].get('position_advice', {})
             if has_position:
@@ -416,26 +416,35 @@ class AnalysisResult:
         return self.operation_advice
 
     def get_sniper_points(self) -> Dict[str, str]:
-        """获取狙击点位"""
+        """Return sniper entry/exit points."""
         if self.dashboard and 'battle_plan' in self.dashboard:
             return self.dashboard['battle_plan'].get('sniper_points', {})
         return {}
 
     def get_checklist(self) -> List[str]:
-        """获取检查清单"""
+        """Return the action checklist."""
         if self.dashboard and 'battle_plan' in self.dashboard:
             return self.dashboard['battle_plan'].get('action_checklist', [])
         return []
 
     def get_risk_alerts(self) -> List[str]:
-        """获取风险警报"""
+        """Return risk alerts."""
         if self.dashboard and 'intelligence' in self.dashboard:
             return self.dashboard['intelligence'].get('risk_alerts', [])
         return []
 
     def get_emoji(self) -> str:
-        """根据操作建议返回对应 emoji"""
+        """Return emoji corresponding to the operation advice."""
         emoji_map = {
+            'Buy': '🟢',
+            'Add': '🟢',
+            'Strong Buy': '💚',
+            'Hold': '🟡',
+            'Wait & Watch': '⚪',
+            'Reduce': '🟠',
+            'Sell': '🔴',
+            'Strong Sell': '❌',
+            # Legacy Chinese values (backward compat)
             '买入': '🟢',
             '加仓': '🟢',
             '强烈买入': '💚',
@@ -449,7 +458,7 @@ class AnalysisResult:
         # Direct match first
         if advice in emoji_map:
             return emoji_map[advice]
-        # Handle compound advice like "卖出/观望" — use the first part
+        # Handle compound advice like "Sell/Wait" — use the first part
         for part in advice.replace('/', '|').split('|'):
             part = part.strip()
             if part in emoji_map:
@@ -457,11 +466,11 @@ class AnalysisResult:
         # Score-based fallback
         score = self.sentiment_score
         if score >= 80:
-            return '💚'
+            return '�'
         elif score >= 65:
             return '🟢'
         elif score >= 55:
-            return '🟡'
+            return '�🟡'
         elif score >= 45:
             return '⚪'
         elif score >= 35:
@@ -470,217 +479,219 @@ class AnalysisResult:
             return '🔴'
 
     def get_confidence_stars(self) -> str:
-        """返回置信度星级"""
-        star_map = {'高': '⭐⭐⭐', '中': '⭐⭐', '低': '⭐'}
+        """Return star rating for confidence level."""
+        star_map = {'High': '⭐⭐⭐', 'Medium': '⭐⭐', 'Low': '⭐'}
         return star_map.get(self.confidence_level, '⭐⭐')
 
 
 class GeminiAnalyzer:
     """
-    Gemini AI 分析器
+    LLM-based stock analyzer.
 
-    职责：
-    1. 调用 Google Gemini API 进行股票分析
-    2. 结合预先搜索的新闻和技术面数据生成分析报告
-    3. 解析 AI 返回的 JSON 格式结果
+    Responsibilities:
+    1. Call the LLM API via LiteLLM for stock analysis
+    2. Generate analysis reports combining pre-fetched news and technical data
+    3. Parse AI JSON responses into structured AnalysisResult objects
 
-    使用方式：
+    Usage:
         analyzer = GeminiAnalyzer()
         result = analyzer.analyze(context, news_context)
     """
 
     # ========================================
-    # 系统提示词 - 决策仪表盘 v2.0
+    # System Prompt - Decision Dashboard v2.0
     # ========================================
-    # 输出格式升级：从简单信号升级为决策仪表盘
-    # 核心模块：核心结论 + 数据透视 + 舆情情报 + 作战计划
+    # Output upgraded from simple signals to a full Decision Dashboard
+    # Core modules: Core Conclusion + Data Perspective + Intelligence + Battle Plan
     # ========================================
 
-    SYSTEM_PROMPT = """你是一位专注于趋势交易的 A 股投资分析师，负责生成专业的【决策仪表盘】分析报告。
+    SYSTEM_PROMPT = """You are a trend-focused A-share equity analyst responsible for generating professional Decision Dashboard analysis reports.
 
-## 核心交易理念（必须严格遵守）
+**IMPORTANT: Your entire response — all field values, descriptions, summaries, and analysis text — must be written in English.**
 
-### 1. 严进策略（不追高）
-- **绝对不追高**：当股价偏离 MA5 超过 5% 时，坚决不买入
-- **乖离率公式**：(现价 - MA5) / MA5 × 100%
-- 乖离率 < 2%：最佳买点区间
-- 乖离率 2-5%：可小仓介入
-- 乖离率 > 5%：严禁追高！直接判定为"观望"
+## Core Trading Philosophy (strictly enforced)
 
-### 2. 趋势交易（顺势而为）
-- **多头排列必须条件**：MA5 > MA10 > MA20
-- 只做多头排列的股票，空头排列坚决不碰
-- 均线发散上行优于均线粘合
-- 趋势强度判断：看均线间距是否在扩大
+### 1. Strict Entry Strategy (no chasing highs)
+- **Never chase highs**: Do not buy when price deviates more than 5% above MA5
+- **Bias formula**: (Current Price - MA5) / MA5 × 100%
+- Bias < 2%: Optimal entry zone
+- Bias 2–5%: Small position entry acceptable
+- Bias > 5%: Strictly avoid chasing highs — classify as "Wait & Watch"
 
-### 3. 效率优先（筹码结构）
-- 关注筹码集中度：90%集中度 < 15% 表示筹码集中
-- 获利比例分析：70-90% 获利盘时需警惕获利回吐
-- 平均成本与现价关系：现价高于平均成本 5-15% 为健康
+### 2. Trend Trading (follow the trend)
+- **Bullish alignment requirement**: MA5 > MA10 > MA20
+- Only trade stocks in bullish alignment; avoid bearish alignment entirely
+- Diverging MAs trending upward is preferred over converging MAs
+- Trend strength: assess whether the gap between MAs is widening
 
-### 4. 买点偏好（回踩支撑）
-- **最佳买点**：缩量回踩 MA5 获得支撑
-- **次优买点**：回踩 MA10 获得支撑
-- **观望情况**：跌破 MA20 时观望
+### 3. Efficiency First (chip structure)
+- Monitor chip concentration: 90% concentration < 15% indicates concentrated chips
+- Profit ratio analysis: 70–90% profit ratio warrants caution about profit-taking
+- Avg cost vs. current price: healthy when current price is 5–15% above avg cost
 
-### 5. 风险排查重点
-- 减持公告（股东、高管减持）
-- 业绩预亏/大幅下滑
-- 监管处罚/立案调查
-- 行业政策利空
-- 大额解禁
+### 4. Entry Preference (pullback to support)
+- **Ideal entry**: Low-volume pullback to MA5 with support
+- **Secondary entry**: Pullback to MA10 with support
+- **Wait & Watch**: When price breaks below MA20
 
-### 6. 估值关注（PE/PB）
-- 分析时请关注市盈率（PE）是否合理
-- PE 明显偏高时（如远超行业平均或历史均值），需在风险点中说明
-- 高成长股可适当容忍较高 PE，但需有业绩支撑
+### 5. Key Risk Checks
+- Reduction announcements (major shareholders, executives selling)
+- Earnings warning / significant earnings decline
+- Regulatory penalties / investigations
+- Sector policy headwinds
+- Large share unlock events
 
-### 7. 强势趋势股放宽
-- 强势趋势股（多头排列且趋势强度高、量能配合）可适当放宽乖离率要求
-- 此类股票可轻仓追踪，但仍需设置止损，不盲目追高
+### 6. Valuation Awareness (PE/PB)
+- Assess whether the P/E ratio is reasonable
+- When PE is significantly elevated (e.g., far above sector average or historical mean), flag it in risk points
+- High-growth stocks may tolerate higher PE, but must be supported by earnings
 
-## 输出格式：决策仪表盘 JSON
+### 7. Relaxed Rules for Strong Trend Stocks
+- Strong trend stocks (bullish alignment, high trend strength, volume confirmation) may have slightly relaxed bias thresholds
+- These stocks may be tracked with a small position, but stop-loss is still required — never blindly chase
 
-请严格按照以下 JSON 格式输出，这是一个完整的【决策仪表盘】：
+## Output Format: Decision Dashboard JSON
+
+Strictly output the following JSON structure — this is the complete Decision Dashboard:
 
 ```json
 {
-    "stock_name": "股票中文名称",
-    "sentiment_score": 0-100整数,
-    "trend_prediction": "强烈看多/看多/震荡/看空/强烈看空",
-    "operation_advice": "买入/加仓/持有/减仓/卖出/观望",
+    "stock_name": "Stock full name",
+    "sentiment_score": integer 0-100,
+    "trend_prediction": "Strong Buy / Buy / Neutral / Sell / Strong Sell",
+    "operation_advice": "Buy / Add / Hold / Reduce / Sell / Wait & Watch",
     "decision_type": "buy/hold/sell",
-    "confidence_level": "高/中/低",
+    "confidence_level": "High / Medium / Low",
 
     "dashboard": {
         "core_conclusion": {
-            "one_sentence": "一句话核心结论（30字以内，直接告诉用户做什么）",
-            "signal_type": "🟢买入信号/🟡持有观望/🔴卖出信号/⚠️风险警告",
-            "time_sensitivity": "立即行动/今日内/本周内/不急",
+            "one_sentence": "One-sentence core conclusion (max 30 words, tell the user exactly what to do)",
+            "signal_type": "🟢 Buy Signal / 🟡 Hold & Watch / 🔴 Sell Signal / ⚠️ Risk Warning",
+            "time_sensitivity": "Act Now / Today / This Week / No Rush",
             "position_advice": {
-                "no_position": "空仓者建议：具体操作指引",
-                "has_position": "持仓者建议：具体操作指引"
+                "no_position": "For those without a position: specific action guidance",
+                "has_position": "For current holders: specific action guidance"
             }
         },
 
         "data_perspective": {
             "trend_status": {
-                "ma_alignment": "均线排列状态描述",
+                "ma_alignment": "Description of MA alignment state",
                 "is_bullish": true/false,
                 "trend_score": 0-100
             },
             "price_position": {
-                "current_price": 当前价格数值,
-                "ma5": MA5数值,
-                "ma10": MA10数值,
-                "ma20": MA20数值,
-                "bias_ma5": 乖离率百分比数值,
-                "bias_status": "安全/警戒/危险",
-                "support_level": 支撑位价格,
-                "resistance_level": 压力位价格
+                "current_price": numeric current price,
+                "ma5": numeric MA5 value,
+                "ma10": numeric MA10 value,
+                "ma20": numeric MA20 value,
+                "bias_ma5": numeric bias percentage from MA5,
+                "bias_status": "Safe / Caution / Danger",
+                "support_level": numeric support price,
+                "resistance_level": numeric resistance price
             },
             "volume_analysis": {
-                "volume_ratio": 量比数值,
-                "volume_status": "放量/缩量/平量",
-                "turnover_rate": 换手率百分比,
-                "volume_meaning": "量能含义解读（如：缩量回调表示抛压减轻）"
+                "volume_ratio": numeric volume ratio,
+                "volume_status": "High Volume / Low Volume / Normal Volume",
+                "turnover_rate": numeric turnover rate percentage,
+                "volume_meaning": "Interpretation of volume (e.g., low-volume pullback indicates reduced selling pressure)"
             },
             "chip_structure": {
-                "profit_ratio": 获利比例,
-                "avg_cost": 平均成本,
-                "concentration": 筹码集中度,
-                "chip_health": "健康/一般/警惕"
+                "profit_ratio": profit ratio value,
+                "avg_cost": average cost value,
+                "concentration": chip concentration value,
+                "chip_health": "Healthy / Fair / Caution"
             }
         },
 
         "intelligence": {
-            "latest_news": "【最新消息】近期重要新闻摘要",
-            "risk_alerts": ["风险点1：具体描述", "风险点2：具体描述"],
-            "positive_catalysts": ["利好1：具体描述", "利好2：具体描述"],
-            "earnings_outlook": "业绩预期分析（基于年报预告、业绩快报等）",
-            "sentiment_summary": "舆情情绪一句话总结"
+            "latest_news": "[Latest News] Summary of recent important news",
+            "risk_alerts": ["Risk 1: specific description", "Risk 2: specific description"],
+            "positive_catalysts": ["Catalyst 1: specific description", "Catalyst 2: specific description"],
+            "earnings_outlook": "Earnings outlook analysis (based on annual report previews, earnings releases, etc.)",
+            "sentiment_summary": "One-sentence market sentiment summary"
         },
 
         "battle_plan": {
             "sniper_points": {
-                "ideal_buy": "理想买入点：XX元（在MA5附近）",
-                "secondary_buy": "次优买入点：XX元（在MA10附近）",
-                "stop_loss": "止损位：XX元（跌破MA20或X%）",
-                "take_profit": "目标位：XX元（前高/整数关口）"
+                "ideal_buy": "Ideal entry: XX (near MA5)",
+                "secondary_buy": "Secondary entry: XX (near MA10)",
+                "stop_loss": "Stop-loss: XX (break below MA20 or X%)",
+                "take_profit": "Target: XX (prior high / round number)"
             },
             "position_strategy": {
-                "suggested_position": "建议仓位：X成",
-                "entry_plan": "分批建仓策略描述",
-                "risk_control": "风控策略描述"
+                "suggested_position": "Suggested position size: X/10",
+                "entry_plan": "Staged entry strategy description",
+                "risk_control": "Risk management strategy description"
             },
             "action_checklist": [
-                "✅/⚠️/❌ 检查项1：多头排列",
-                "✅/⚠️/❌ 检查项2：乖离率合理（强势趋势可放宽）",
-                "✅/⚠️/❌ 检查项3：量能配合",
-                "✅/⚠️/❌ 检查项4：无重大利空",
-                "✅/⚠️/❌ 检查项5：筹码健康",
-                "✅/⚠️/❌ 检查项6：PE估值合理"
+                "✅/⚠️/❌ Check 1: Bullish MA alignment",
+                "✅/⚠️/❌ Check 2: Bias within safe range (relaxed for strong trend stocks)",
+                "✅/⚠️/❌ Check 3: Volume confirmation",
+                "✅/⚠️/❌ Check 4: No major negative catalysts",
+                "✅/⚠️/❌ Check 5: Healthy chip structure",
+                "✅/⚠️/❌ Check 6: Reasonable PE valuation"
             ]
         }
     },
 
-    "analysis_summary": "100字综合分析摘要",
-    "key_points": "3-5个核心看点，逗号分隔",
-    "risk_warning": "风险提示",
-    "buy_reason": "操作理由，引用交易理念",
+    "analysis_summary": "Comprehensive analysis summary (~100 words)",
+    "key_points": "3–5 key takeaways, comma-separated",
+    "risk_warning": "Risk disclosure",
+    "buy_reason": "Rationale for the recommendation, referencing trading philosophy",
 
-    "trend_analysis": "走势形态分析",
-    "short_term_outlook": "短期1-3日展望",
-    "medium_term_outlook": "中期1-2周展望",
-    "technical_analysis": "技术面综合分析",
-    "ma_analysis": "均线系统分析",
-    "volume_analysis": "量能分析",
-    "pattern_analysis": "K线形态分析",
-    "fundamental_analysis": "基本面分析",
-    "sector_position": "板块行业分析",
-    "company_highlights": "公司亮点/风险",
-    "news_summary": "新闻摘要",
-    "market_sentiment": "市场情绪",
-    "hot_topics": "相关热点",
+    "trend_analysis": "Price action and trend pattern analysis",
+    "short_term_outlook": "Short-term outlook (1–3 days)",
+    "medium_term_outlook": "Medium-term outlook (1–2 weeks)",
+    "technical_analysis": "Comprehensive technical indicator analysis",
+    "ma_analysis": "Moving average system analysis",
+    "volume_analysis": "Volume and momentum analysis",
+    "pattern_analysis": "Candlestick pattern analysis",
+    "fundamental_analysis": "Fundamental analysis",
+    "sector_position": "Sector and industry analysis",
+    "company_highlights": "Company highlights / risks",
+    "news_summary": "News summary",
+    "market_sentiment": "Market sentiment analysis",
+    "hot_topics": "Related hot topics",
 
     "search_performed": true/false,
-    "data_sources": "数据来源说明"
+    "data_sources": "Data source description"
 }
 ```
 
-## 评分标准
+## Scoring Criteria
 
-### 强烈买入（80-100分）：
-- ✅ 多头排列：MA5 > MA10 > MA20
-- ✅ 低乖离率：<2%，最佳买点
-- ✅ 缩量回调或放量突破
-- ✅ 筹码集中健康
-- ✅ 消息面有利好催化
+### Strong Buy (80–100):
+- ✅ Bullish alignment: MA5 > MA10 > MA20
+- ✅ Low bias: < 2%, optimal entry zone
+- ✅ Low-volume pullback or high-volume breakout
+- ✅ Concentrated, healthy chip structure
+- ✅ Positive news catalyst
 
-### 买入（60-79分）：
-- ✅ 多头排列或弱势多头
-- ✅ 乖离率 <5%
-- ✅ 量能正常
-- ⚪ 允许一项次要条件不满足
+### Buy (60–79):
+- ✅ Bullish or weakly bullish alignment
+- ✅ Bias < 5%
+- ✅ Normal volume
+- ⚪ One minor condition may be unmet
 
-### 观望（40-59分）：
-- ⚠️ 乖离率 >5%（追高风险）
-- ⚠️ 均线缠绕趋势不明
-- ⚠️ 有风险事件
+### Wait & Watch (40–59):
+- ⚠️ Bias > 5% (risk of chasing highs)
+- ⚠️ MAs converging, trend unclear
+- ⚠️ Risk event present
 
-### 卖出/减仓（0-39分）：
-- ❌ 空头排列
-- ❌ 跌破MA20
-- ❌ 放量下跌
-- ❌ 重大利空
+### Sell / Reduce (0–39):
+- ❌ Bearish MA alignment
+- ❌ Price breaks below MA20
+- ❌ High-volume decline
+- ❌ Major negative catalyst
 
-## 决策仪表盘核心原则
+## Decision Dashboard Core Principles
 
-1. **核心结论先行**：一句话说清该买该卖
-2. **分持仓建议**：空仓者和持仓者给不同建议
-3. **精确狙击点**：必须给出具体价格，不说模糊的话
-4. **检查清单可视化**：用 ✅⚠️❌ 明确显示每项检查结果
-5. **风险优先级**：舆情中的风险点要醒目标出"""
+1. **Lead with the core conclusion**: One sentence — buy, sell, or wait
+2. **Split position advice**: Different guidance for those with vs. without a position
+3. **Precise sniper points**: Always give specific prices — no vague language
+4. **Visual checklist**: Use ✅ ⚠️ ❌ to clearly mark each check item
+5. **Risk priority**: Risk alerts in the intelligence section must be prominently highlighted"""
 
     def __init__(self, api_key: Optional[str] = None):
         """Initialize LLM Analyzer via LiteLLM.
@@ -886,81 +897,81 @@ class GeminiAnalyzer:
         news_context: Optional[str] = None
     ) -> AnalysisResult:
         """
-        分析单只股票
-        
-        流程：
-        1. 格式化输入数据（技术面 + 新闻）
-        2. 调用 Gemini API（带重试和模型切换）
-        3. 解析 JSON 响应
-        4. 返回结构化结果
-        
+        Analyze a single stock.
+
+        Flow:
+        1. Format input data (technical + news)
+        2. Call LLM API (with retry and model fallback)
+        3. Parse JSON response
+        4. Return structured result
+
         Args:
-            context: 从 storage.get_analysis_context() 获取的上下文数据
-            news_context: 预先搜索的新闻内容（可选）
-            
+            context: Context data from storage.get_analysis_context()
+            news_context: Pre-fetched news content (optional)
+
         Returns:
-            AnalysisResult 对象
+            AnalysisResult object
         """
         code = context.get('code', 'Unknown')
         config = get_config()
-        
-        # 请求前增加延时（防止连续请求触发限流）
+
+        # Pre-request delay to avoid rate limiting on consecutive calls
         request_delay = config.gemini_request_delay
         if request_delay > 0:
-            logger.debug(f"[LLM] 请求前等待 {request_delay:.1f} 秒...")
+            logger.debug(f"[LLM] Waiting {request_delay:.1f}s before request...")
             time.sleep(request_delay)
-        
-        # 优先从上下文获取股票名称（由 main.py 传入）
+
+        # Prefer stock name from context (passed in by main.py)
         name = context.get('stock_name')
-        if not name or name.startswith('股票'):
-            # 备选：从 realtime 中获取
+        if not name or name.startswith('Stock'):
+            # Fallback: from realtime data
             if 'realtime' in context and context['realtime'].get('name'):
                 name = context['realtime']['name']
             else:
-                # 最后从映射表获取
-                name = STOCK_NAME_MAP.get(code, f'股票{code}')
-        
-        # 如果模型不可用，返回默认结果
+                # Last resort: from lookup table
+                name = STOCK_NAME_MAP.get(code, f'Stock {code}')
+
+        # Return default result if LLM is unavailable
         if not self.is_available():
             return AnalysisResult(
                 code=code,
                 name=name,
                 sentiment_score=50,
-                trend_prediction='震荡',
-                operation_advice='持有',
-                confidence_level='低',
-                analysis_summary='AI 分析功能未启用（未配置 API Key）',
-                risk_warning='请配置 LLM API Key（GEMINI_API_KEY/ANTHROPIC_API_KEY/OPENAI_API_KEY）后重试',
+                trend_prediction='Neutral',
+                operation_advice='Hold',
+                confidence_level='Low',
+                analysis_summary='AI analysis unavailable (no API key configured)',
+                risk_warning='Please configure an LLM API key (GEMINI_API_KEY / ANTHROPIC_API_KEY / OPENAI_API_KEY) and retry',
                 success=False,
-                error_message='LLM API Key 未配置',
+                error_message='LLM API key not configured',
                 model_used=None,
             )
-        
+
         try:
-            # 格式化输入（包含技术面数据和新闻）
+            # Format prompt (technical data + news)
             prompt = self._format_prompt(context, name, news_context)
-            
+
             config = get_config()
             model_name = config.litellm_model or "unknown"
-            logger.info(f"========== AI 分析 {name}({code}) ==========")
-            logger.info(f"[LLM配置] 模型: {model_name}")
-            logger.info(f"[LLM配置] Prompt 长度: {len(prompt)} 字符")
-            logger.info(f"[LLM配置] 是否包含新闻: {'是' if news_context else '否'}")
+            logger.info(f"========== AI Analysis: {name}({code}) ==========")
+            logger.info(f"[LLM] Model: {model_name}")
+            logger.info(f"[LLM] Prompt length: {len(prompt)} chars")
+            logger.info(f"[LLM] News included: {'yes' if news_context else 'no'}")
 
-            # 记录完整 prompt 到日志（INFO级别记录摘要，DEBUG记录完整）
+            # Log prompt (summary at INFO, full at DEBUG)
             prompt_preview = prompt[:500] + "..." if len(prompt) > 500 else prompt
-            logger.info(f"[LLM Prompt 预览]\n{prompt_preview}")
-            logger.debug(f"=== 完整 Prompt ({len(prompt)}字符) ===\n{prompt}\n=== End Prompt ===")
+            logger.info(f"[LLM Prompt preview]\n{prompt_preview}")
+            logger.debug(f"=== Full Prompt ({len(prompt)} chars) ===\n{prompt}\n=== End Prompt ===")
 
-            # 设置生成配置
+            # Generation config
             generation_config = {
                 "temperature": config.llm_temperature,
                 "max_output_tokens": 8192,
             }
 
-            logger.info(f"[LLM调用] 开始调用 {model_name}...")
+            logger.info(f"[LLM] Calling {model_name}...")
 
-            # 使用 litellm 调用（支持完整性校验重试）
+            # LiteLLM call with integrity-check retry support
             current_prompt = prompt
             retry_count = 0
             max_retries = config.report_integrity_retry if config.report_integrity_enabled else 0
@@ -970,24 +981,24 @@ class GeminiAnalyzer:
                 response_text, model_used, llm_usage = self._call_litellm(current_prompt, generation_config)
                 elapsed = time.time() - start_time
 
-                # 记录响应信息
+                # Log response
                 logger.info(
-                    f"[LLM返回] {model_name} 响应成功, 耗时 {elapsed:.2f}s, 响应长度 {len(response_text)} 字符"
+                    f"[LLM] {model_name} responded in {elapsed:.2f}s, length {len(response_text)} chars"
                 )
                 response_preview = response_text[:300] + "..." if len(response_text) > 300 else response_text
-                logger.info(f"[LLM返回 预览]\n{response_preview}")
+                logger.info(f"[LLM Response preview]\n{response_preview}")
                 logger.debug(
-                    f"=== {model_name} 完整响应 ({len(response_text)}字符) ===\n{response_text}\n=== End Response ==="
+                    f"=== {model_name} Full Response ({len(response_text)} chars) ===\n{response_text}\n=== End Response ==="
                 )
 
-                # 解析响应
+                # Parse response
                 result = self._parse_response(response_text, code, name)
                 result.raw_response = response_text
                 result.search_performed = bool(news_context)
                 result.market_snapshot = self._build_market_snapshot(context)
                 result.model_used = model_used
 
-                # 内容完整性校验（可选）
+                # Optional integrity check
                 if not config.report_integrity_enabled:
                     break
                 pass_integrity, missing_fields = self._check_content_integrity(result)
@@ -1001,260 +1012,263 @@ class GeminiAnalyzer:
                     )
                     retry_count += 1
                     logger.info(
-                        "[LLM完整性] 必填字段缺失 %s，第 %d 次补全重试",
+                        "[LLM integrity] Missing required fields %s, retry %d",
                         missing_fields,
                         retry_count,
                     )
                 else:
                     self._apply_placeholder_fill(result, missing_fields)
                     logger.warning(
-                        "[LLM完整性] 必填字段缺失 %s，已占位补全，不阻塞流程",
+                        "[LLM integrity] Missing required fields %s, filled with placeholders",
                         missing_fields,
                     )
                     break
 
             persist_llm_usage(llm_usage, model_used, call_type="analysis", stock_code=code)
 
-            logger.info(f"[LLM解析] {name}({code}) 分析完成: {result.trend_prediction}, 评分 {result.sentiment_score}")
+            logger.info(f"[LLM] {name}({code}) analysis complete: {result.trend_prediction}, score {result.sentiment_score}")
 
             return result
-            
+
         except Exception as e:
-            logger.error(f"AI 分析 {name}({code}) 失败: {e}")
+            logger.error(f"AI analysis failed for {name}({code}): {e}")
             return AnalysisResult(
                 code=code,
                 name=name,
                 sentiment_score=50,
-                trend_prediction='震荡',
-                operation_advice='持有',
-                confidence_level='低',
-                analysis_summary=f'分析过程出错: {str(e)[:100]}',
-                risk_warning='分析失败，请稍后重试或手动分析',
+                trend_prediction='Neutral',
+                operation_advice='Hold',
+                confidence_level='Low',
+                analysis_summary=f'Analysis error: {str(e)[:100]}',
+                risk_warning='Analysis failed — please retry or perform manual analysis',
                 success=False,
                 error_message=str(e),
                 model_used=None,
             )
     
     def _format_prompt(
-        self, 
-        context: Dict[str, Any], 
+        self,
+        context: Dict[str, Any],
         name: str,
         news_context: Optional[str] = None
     ) -> str:
         """
-        格式化分析提示词（决策仪表盘 v2.0）
-        
-        包含：技术指标、实时行情（量比/换手率）、筹码分布、趋势分析、新闻
-        
+        Format the analysis prompt (Decision Dashboard v2.0).
+
+        Includes: technical indicators, real-time quote (volume ratio / turnover rate),
+        chip distribution, trend analysis, and news.
+
         Args:
-            context: 技术面数据上下文（包含增强数据）
-            name: 股票名称（默认值，可能被上下文覆盖）
-            news_context: 预先搜索的新闻内容
+            context: Technical data context (including enriched data)
+            name: Stock name (default, may be overridden by context)
+            news_context: Pre-fetched news content (optional)
         """
         code = context.get('code', 'Unknown')
-        
-        # 优先使用上下文中的股票名称（从 realtime_quote 获取）
+
+        # Prefer stock name from context (sourced from realtime_quote)
         stock_name = context.get('stock_name', name)
-        if not stock_name or stock_name == f'股票{code}':
-            stock_name = STOCK_NAME_MAP.get(code, f'股票{code}')
-            
+        if not stock_name or stock_name == f'Stock {code}':
+            stock_name = STOCK_NAME_MAP.get(code, f'Stock {code}')
+
         today = context.get('today', {})
-        
-        # ========== 构建决策仪表盘格式的输入 ==========
-        prompt = f"""# 决策仪表盘分析请求
 
-## 📊 股票基础信息
-| 项目 | 数据 |
-|------|------|
-| 股票代码 | **{code}** |
-| 股票名称 | **{stock_name}** |
-| 分析日期 | {context.get('date', '未知')} |
+        # ========== Build Decision Dashboard input ==========
+        prompt = f"""# Decision Dashboard Analysis Request
 
----
+    ## 📊 Stock Information
+    | Field | Value |
+    |-------|-------|
+    | Stock Code | **{code}** |
+    | Stock Name | **{stock_name}** |
+    | Analysis Date | {context.get('date', 'Unknown')} |
 
-## 📈 技术面数据
+    ---
 
-### 今日行情
-| 指标 | 数值 |
-|------|------|
-| 收盘价 | {today.get('close', 'N/A')} 元 |
-| 开盘价 | {today.get('open', 'N/A')} 元 |
-| 最高价 | {today.get('high', 'N/A')} 元 |
-| 最低价 | {today.get('low', 'N/A')} 元 |
-| 涨跌幅 | {today.get('pct_chg', 'N/A')}% |
-| 成交量 | {self._format_volume(today.get('volume'))} |
-| 成交额 | {self._format_amount(today.get('amount'))} |
+    ## 📈 Technical Data
 
-### 均线系统（关键判断指标）
-| 均线 | 数值 | 说明 |
-|------|------|------|
-| MA5 | {today.get('ma5', 'N/A')} | 短期趋势线 |
-| MA10 | {today.get('ma10', 'N/A')} | 中短期趋势线 |
-| MA20 | {today.get('ma20', 'N/A')} | 中期趋势线 |
-| 均线形态 | {context.get('ma_status', '未知')} | 多头/空头/缠绕 |
-"""
-        
-        # 添加实时行情数据（量比、换手率等）
+    ### Today's Market
+    | Indicator | Value |
+    |-----------|-------|
+    | Close | {today.get('close', 'N/A')} |
+    | Open | {today.get('open', 'N/A')} |
+    | High | {today.get('high', 'N/A')} |
+    | Low | {today.get('low', 'N/A')} |
+    | Change % | {today.get('pct_chg', 'N/A')}% |
+    | Volume | {self._format_volume(today.get('volume'))} |
+    | Turnover | {self._format_amount(today.get('amount'))} |
+
+    ### Moving Average System (key decision indicators)
+    | MA | Value | Description |
+    |----|-------|-------------|
+    | MA5 | {today.get('ma5', 'N/A')} | Short-term trend line |
+    | MA10 | {today.get('ma10', 'N/A')} | Medium-short trend line |
+    | MA20 | {today.get('ma20', 'N/A')} | Medium-term trend line |
+    | MA Pattern | {context.get('ma_status', 'Unknown')} | Bullish / Bearish / Converging |
+    """
+
+        # Real-time quote data (volume ratio, turnover rate, etc.)
         if 'realtime' in context:
             rt = context['realtime']
             prompt += f"""
-### 实时行情增强数据
-| 指标 | 数值 | 解读 |
-|------|------|------|
-| 当前价格 | {rt.get('price', 'N/A')} 元 | |
-| **量比** | **{rt.get('volume_ratio', 'N/A')}** | {rt.get('volume_ratio_desc', '')} |
-| **换手率** | **{rt.get('turnover_rate', 'N/A')}%** | |
-| 市盈率(动态) | {rt.get('pe_ratio', 'N/A')} | |
-| 市净率 | {rt.get('pb_ratio', 'N/A')} | |
-| 总市值 | {self._format_amount(rt.get('total_mv'))} | |
-| 流通市值 | {self._format_amount(rt.get('circ_mv'))} | |
-| 60日涨跌幅 | {rt.get('change_60d', 'N/A')}% | 中期表现 |
-"""
-        
-        # 添加筹码分布数据
+    ### Real-Time Quote Data
+    | Indicator | Value | Note |
+    |-----------|-------|------|
+    | Current Price | {rt.get('price', 'N/A')} | |
+    | **Volume Ratio** | **{rt.get('volume_ratio', 'N/A')}** | {rt.get('volume_ratio_desc', '')} |
+    | **Turnover Rate** | **{rt.get('turnover_rate', 'N/A')}%** | |
+    | P/E Ratio (TTM) | {rt.get('pe_ratio', 'N/A')} | |
+    | P/B Ratio | {rt.get('pb_ratio', 'N/A')} | |
+    | Market Cap | {self._format_amount(rt.get('total_mv'))} | |
+    | Float Market Cap | {self._format_amount(rt.get('circ_mv'))} | |
+    | 60-Day Change | {rt.get('change_60d', 'N/A')}% | Medium-term performance |
+    """
+
+        # Chip distribution data
         if 'chip' in context:
             chip = context['chip']
             profit_ratio = chip.get('profit_ratio', 0)
             prompt += f"""
-### 筹码分布数据（效率指标）
-| 指标 | 数值 | 健康标准 |
-|------|------|----------|
-| **获利比例** | **{profit_ratio:.1%}** | 70-90%时警惕 |
-| 平均成本 | {chip.get('avg_cost', 'N/A')} 元 | 现价应高于5-15% |
-| 90%筹码集中度 | {chip.get('concentration_90', 0):.2%} | <15%为集中 |
-| 70%筹码集中度 | {chip.get('concentration_70', 0):.2%} | |
-| 筹码状态 | {chip.get('chip_status', '未知')} | |
-"""
-        
-        # 添加趋势分析结果（基于交易理念的预判）
+    ### Chip Distribution (Efficiency Indicators)
+    | Indicator | Value | Healthy Range |
+    |-----------|-------|---------------|
+    | **Profit Ratio** | **{profit_ratio:.1%}** | Caution when 70-90% |
+    | Avg Cost | {chip.get('avg_cost', 'N/A')} | Current price should be 5-15% above |
+    | 90% Chip Concentration | {chip.get('concentration_90', 0):.2%} | < 15% = concentrated |
+    | 70% Chip Concentration | {chip.get('concentration_70', 0):.2%} | |
+    | Chip Status | {chip.get('chip_status', 'Unknown')} | |
+    """
+
+        # Trend analysis pre-assessment (based on trading philosophy)
         if 'trend_analysis' in context:
             trend = context['trend_analysis']
-            bias_warning = "🚨 超过5%，严禁追高！" if trend.get('bias_ma5', 0) > 5 else "✅ 安全范围"
+            bias_warning = "🚨 Exceeds 5% — strictly avoid chasing highs!" if trend.get('bias_ma5', 0) > 5 else "✅ Safe range"
             prompt += f"""
-### 趋势分析预判（基于交易理念）
-| 指标 | 数值 | 判定 |
-|------|------|------|
-| 趋势状态 | {trend.get('trend_status', '未知')} | |
-| 均线排列 | {trend.get('ma_alignment', '未知')} | MA5>MA10>MA20为多头 |
-| 趋势强度 | {trend.get('trend_strength', 0)}/100 | |
-| **乖离率(MA5)** | **{trend.get('bias_ma5', 0):+.2f}%** | {bias_warning} |
-| 乖离率(MA10) | {trend.get('bias_ma10', 0):+.2f}% | |
-| 量能状态 | {trend.get('volume_status', '未知')} | {trend.get('volume_trend', '')} |
-| 系统信号 | {trend.get('buy_signal', '未知')} | |
-| 系统评分 | {trend.get('signal_score', 0)}/100 | |
+    ### Trend Pre-Assessment (based on trading philosophy)
+    | Indicator | Value | Assessment |
+    |-----------|-------|------------|
+    | Trend Status | {trend.get('trend_status', 'Unknown')} | |
+    | MA Alignment | {trend.get('ma_alignment', 'Unknown')} | MA5>MA10>MA20 = bullish |
+    | Trend Strength | {trend.get('trend_strength', 0)}/100 | |
+    | **Bias (MA5)** | **{trend.get('bias_ma5', 0):+.2f}%** | {bias_warning} |
+    | Bias (MA10) | {trend.get('bias_ma10', 0):+.2f}% | |
+    | Volume Status | {trend.get('volume_status', 'Unknown')} | {trend.get('volume_trend', '')} |
+    | System Signal | {trend.get('buy_signal', 'Unknown')} | |
+    | System Score | {trend.get('signal_score', 0)}/100 | |
 
-#### 系统分析理由
-**买入理由**：
-{chr(10).join('- ' + r for r in trend.get('signal_reasons', ['无'])) if trend.get('signal_reasons') else '- 无'}
+    #### System Analysis Rationale
+    **Buy Reasons**:
+    {chr(10).join('- ' + r for r in trend.get('signal_reasons', ['None'])) if trend.get('signal_reasons') else '- None'}
 
-**风险因素**：
-{chr(10).join('- ' + r for r in trend.get('risk_factors', ['无'])) if trend.get('risk_factors') else '- 无'}
-"""
-        
-        # 添加昨日对比数据
+    **Risk Factors**:
+    {chr(10).join('- ' + r for r in trend.get('risk_factors', ['None'])) if trend.get('risk_factors') else '- None'}
+    """
+
+        # Volume/price change vs. prior day
         if 'yesterday' in context:
             volume_change = context.get('volume_change_ratio', 'N/A')
             prompt += f"""
-### 量价变化
-- 成交量较昨日变化：{volume_change}倍
-- 价格较昨日变化：{context.get('price_change_ratio', 'N/A')}%
-"""
-        
-        # 添加新闻搜索结果（重点区域）
-        prompt += """
----
+    ### Volume & Price Change
+    - Volume vs. prior day: {volume_change}x
+    - Price change vs. prior day: {context.get('price_change_ratio', 'N/A')}%
+    """
 
-## 📰 舆情情报
-"""
+        # News / sentiment section
+        prompt += """
+    ---
+
+    ## 📰 Market Intelligence
+    """
         if news_context:
             prompt += f"""
-以下是 **{stock_name}({code})** 近7日的新闻搜索结果，请重点提取：
-1. 🚨 **风险警报**：减持、处罚、利空
-2. 🎯 **利好催化**：业绩、合同、政策
-3. 📊 **业绩预期**：年报预告、业绩快报
+    The following are news search results for **{stock_name} ({code})** from the past 7 days.
+    Please extract and highlight:
+    1. 🚨 **Risk Alerts**: share reductions, penalties, negative catalysts
+    2. 🎯 **Positive Catalysts**: earnings beats, contracts, policy tailwinds
+    3. 📊 **Earnings Outlook**: annual report previews, earnings releases
 
-```
-{news_context}
-```
-"""
+    ```
+    {news_context}
+    ```
+    """
         else:
             prompt += """
-未搜索到该股票近期的相关新闻。请主要依据技术面数据进行分析。
-"""
+    No recent news found for this stock. Base the analysis primarily on technical data.
+    """
 
-        # 注入缺失数据警告
+        # Data missing warning
         if context.get('data_missing'):
             prompt += """
-⚠️ **数据缺失警告**
-由于接口限制，当前无法获取完整的实时行情和技术指标数据。
-请 **忽略上述表格中的 N/A 数据**，重点依据 **【📰 舆情情报】** 中的新闻进行基本面和情绪面分析。
-在回答技术面问题（如均线、乖离率）时，请直接说明“数据缺失，无法判断”，**严禁编造数据**。
-"""
+    ⚠️ **Data Warning**
+    Due to API limitations, complete real-time quote and technical indicator data is unavailable.
+    Please **ignore N/A values** in the tables above and focus the analysis on the **📰 Market Intelligence** section.
+    For technical questions (e.g., MAs, bias), explicitly state "Data unavailable — cannot assess." **Do not fabricate data.**
+    """
 
-        # 明确的输出要求
+        # Output requirements
         prompt += f"""
----
+    ---
 
-## ✅ 分析任务
+    ## ✅ Analysis Task
 
-请为 **{stock_name}({code})** 生成【决策仪表盘】，严格按照 JSON 格式输出。
-"""
+    Generate the **Decision Dashboard** for **{stock_name} ({code})** and output strictly in JSON format.
+    """
         if context.get('is_index_etf'):
             prompt += """
-> ⚠️ **指数/ETF 分析约束**：该标的为指数跟踪型 ETF 或市场指数。
-> - 风险分析仅关注：**指数走势、跟踪误差、市场流动性**
-> - 严禁将基金公司的诉讼、声誉、高管变动纳入风险警报
-> - 业绩预期基于**指数成分股整体表现**，而非基金公司财报
-> - `risk_alerts` 中不得出现基金管理人相关的公司经营风险
+    > ⚠️ **Index / ETF Constraint**: This security is an index-tracking ETF or market index.
+    > - Risk analysis must focus only on: **index trend, tracking error, market liquidity**
+    > - Do NOT include fund company litigation, reputation, or management changes in risk alerts
+    > - Earnings outlook should be based on **overall index constituent performance**, not fund company financials
+    > - `risk_alerts` must not contain fund manager operational risks
 
-"""
+    """
         prompt += f"""
-### ⚠️ 重要：输出正确的股票名称格式
-正确的股票名称格式为“股票名称（股票代码）”，例如“贵州茅台（600519）”。
-如果上方显示的股票名称为"股票{code}"或不正确，请在分析开头**明确输出该股票的正确中文全称**。
+    ### ⚠️ Important: Output the correct stock name
+    The correct format is "Stock Name (Stock Code)", e.g., "Kweichow Moutai (600519)".
+    If the stock name shown above is "Stock {code}" or otherwise incorrect, explicitly output the correct full name at the start of your analysis.
 
-### 重点关注（必须明确回答）：
-1. ❓ 是否满足 MA5>MA10>MA20 多头排列？
-2. ❓ 当前乖离率是否在安全范围内（<5%）？—— 超过5%必须标注"严禁追高"
-3. ❓ 量能是否配合（缩量回调/放量突破）？
-4. ❓ 筹码结构是否健康？
-5. ❓ 消息面有无重大利空？（减持、处罚、业绩变脸等）
+    ### Key Questions (must be answered explicitly):
+    1. ❓ Does MA5 > MA10 > MA20 (bullish alignment) hold?
+    2. ❓ Is the current MA5 bias within the safe range (< 5%)? — If > 5%, flag as "strictly avoid chasing highs"
+    3. ❓ Is volume confirming the move (low-volume pullback / high-volume breakout)?
+    4. ❓ Is the chip structure healthy?
+    5. ❓ Are there any major negative catalysts? (share reductions, penalties, earnings miss, etc.)
 
-### 决策仪表盘要求：
-- **股票名称**：必须输出正确的中文全称（如"贵州茅台"而非"股票600519"）
-- **核心结论**：一句话说清该买/该卖/该等
-- **持仓分类建议**：空仓者怎么做 vs 持仓者怎么做
-- **具体狙击点位**：买入价、止损价、目标价（精确到分）
-- **检查清单**：每项用 ✅/⚠️/❌ 标记
+    ### Decision Dashboard Requirements:
+    - **Stock Name**: Output the correct full name (e.g., "Kweichow Moutai", not "Stock 600519")
+    - **Core Conclusion**: One sentence — buy, sell, or wait
+    - **Split Position Advice**: Separate guidance for those with vs. without a position
+    - **Precise Sniper Points**: Entry price, stop-loss, and target price (to the cent)
+    - **Action Checklist**: Mark each item with ✅ / ⚠️ / ❌
 
-请输出完整的 JSON 格式决策仪表盘。"""
-        
+    Output the complete JSON Decision Dashboard. All text values must be in English."""
+
         return prompt
+
     
     def _format_volume(self, volume: Optional[float]) -> str:
-        """格式化成交量显示"""
+        """Format trading volume for display."""
         if volume is None:
             return 'N/A'
         if volume >= 1e8:
-            return f"{volume / 1e8:.2f} 亿股"
+            return f"{volume / 1e8:.2f} B shares"
         elif volume >= 1e4:
-            return f"{volume / 1e4:.2f} 万股"
+            return f"{volume / 1e4:.2f} W shares"
         else:
-            return f"{volume:.0f} 股"
+            return f"{volume:.0f} shares"
     
     def _format_amount(self, amount: Optional[float]) -> str:
-        """格式化成交额显示"""
+        """Format trading amount for display."""
         if amount is None:
             return 'N/A'
         if amount >= 1e8:
-            return f"{amount / 1e8:.2f} 亿元"
+            return f"{amount / 1e8:.2f} B CNY"
         elif amount >= 1e4:
-            return f"{amount / 1e4:.2f} 万元"
+            return f"{amount / 1e4:.2f} W CNY"
         else:
-            return f"{amount:.0f} 元"
+            return f"{amount:.0f} CNY"
 
     def _format_percent(self, value: Optional[float]) -> str:
-        """格式化百分比显示"""
+        """Format percentage value for display."""
         if value is None:
             return 'N/A'
         try:
@@ -1263,7 +1277,7 @@ class GeminiAnalyzer:
             return 'N/A'
 
     def _format_price(self, value: Optional[float]) -> str:
-        """格式化价格显示"""
+        """Format price value for display."""
         if value is None:
             return 'N/A'
         try:
@@ -1272,7 +1286,7 @@ class GeminiAnalyzer:
             return 'N/A'
 
     def _build_market_snapshot(self, context: Dict[str, Any]) -> Dict[str, Any]:
-        """构建当日行情快照（展示用）"""
+        """Build the current-day market snapshot for display."""
         today = context.get('today', {}) or {}
         realtime = context.get('realtime', {}) or {}
         yesterday = context.get('yesterday', {}) or {}
@@ -1296,7 +1310,7 @@ class GeminiAnalyzer:
                 change_amount = None
 
         snapshot = {
-            "date": context.get('date', '未知'),
+            "date": context.get('date', 'Unknown'),
             "close": self._format_price(close),
             "open": self._format_price(today.get('open')),
             "high": self._format_price(high),
@@ -1325,20 +1339,20 @@ class GeminiAnalyzer:
 
     def _build_integrity_complement_prompt(self, missing_fields: List[str]) -> str:
         """Build complement instruction for missing mandatory fields."""
-        lines = ["### 补全要求：请在上方分析基础上补充以下必填内容，并输出完整 JSON："]
+        lines = ["### Completion requirement: Based on the analysis above, please supplement the following required fields and output the complete JSON:"]
         for f in missing_fields:
             if f == "sentiment_score":
-                lines.append("- sentiment_score: 0-100 综合评分")
+                lines.append("- sentiment_score: overall score 0-100")
             elif f == "operation_advice":
-                lines.append("- operation_advice: 买入/加仓/持有/减仓/卖出/观望")
+                lines.append("- operation_advice: Buy / Add / Hold / Reduce / Sell / Watch")
             elif f == "analysis_summary":
-                lines.append("- analysis_summary: 综合分析摘要")
+                lines.append("- analysis_summary: comprehensive analysis summary")
             elif f == "dashboard.core_conclusion.one_sentence":
-                lines.append("- dashboard.core_conclusion.one_sentence: 一句话决策")
+                lines.append("- dashboard.core_conclusion.one_sentence: one-sentence decision")
             elif f == "dashboard.intelligence.risk_alerts":
-                lines.append("- dashboard.intelligence.risk_alerts: 风险警报列表（可为空数组）")
+                lines.append("- dashboard.intelligence.risk_alerts: list of risk alerts (may be empty array)")
             elif f == "dashboard.battle_plan.sniper_points.stop_loss":
-                lines.append("- dashboard.battle_plan.sniper_points.stop_loss: 止损价")
+                lines.append("- dashboard.battle_plan.sniper_points.stop_loss: stop-loss price")
         return "\n".join(lines)
 
     def _build_integrity_retry_prompt(
@@ -1352,7 +1366,7 @@ class GeminiAnalyzer:
         previous_output = previous_response.strip()
         return "\n\n".join([
             base_prompt,
-            "### 上一次输出如下，请在该输出基础上补齐缺失字段，并重新输出完整 JSON。不要省略已有字段：",
+            "### Previous output is shown below. Please complete the missing fields based on this output and re-output the complete JSON. Do not omit existing fields:",
             previous_output,
             complement,
         ])
@@ -1368,27 +1382,28 @@ class GeminiAnalyzer:
         name: str
     ) -> AnalysisResult:
         """
-        解析 Gemini 响应（决策仪表盘版）
-        
-        尝试从响应中提取 JSON 格式的分析结果，包含 dashboard 字段
-        如果解析失败，尝试智能提取或返回默认结果
+        Parse the Gemini response (decision dashboard version).
+
+        Attempts to extract a JSON-formatted analysis result containing the
+        dashboard field. Falls back to intelligent text extraction or a default
+        result on failure.
         """
         try:
-            # 清理响应文本：移除 markdown 代码块标记
+            # Strip markdown code-fence markers
             cleaned_text = response_text
             if '```json' in cleaned_text:
                 cleaned_text = cleaned_text.replace('```json', '').replace('```', '')
             elif '```' in cleaned_text:
                 cleaned_text = cleaned_text.replace('```', '')
             
-            # 尝试找到 JSON 内容
+            # Locate JSON content
             json_start = cleaned_text.find('{')
             json_end = cleaned_text.rfind('}') + 1
             
             if json_start >= 0 and json_end > json_start:
                 json_str = cleaned_text[json_start:json_end]
                 
-                # 尝试修复常见的 JSON 问题
+                # Attempt to fix common JSON issues
                 json_str = self._fix_json_string(json_str)
                 
                 data = json.loads(json_str)
@@ -1402,22 +1417,22 @@ class GeminiAnalyzer:
                         str(e)[:100],
                     )
 
-                # 提取 dashboard 数据
+                # Extract dashboard data
                 dashboard = data.get('dashboard', None)
 
-                # 优先使用 AI 返回的股票名称（如果原名称无效或包含代码）
+                # Prefer AI-returned stock name when the local name looks invalid
                 ai_stock_name = data.get('stock_name')
-                if ai_stock_name and (name.startswith('股票') or name == code or 'Unknown' in name):
+                if ai_stock_name and (name.startswith('Stock') or name == code or 'Unknown' in name):
                     name = ai_stock_name
 
-                # 解析所有字段，使用默认值防止缺失
-                # 解析 decision_type，如果没有则根据 operation_advice 推断
+                # Parse all fields with safe defaults
+                # Derive decision_type from operation_advice when absent
                 decision_type = data.get('decision_type', '')
                 if not decision_type:
-                    op = data.get('operation_advice', '持有')
-                    if op in ['买入', '加仓', '强烈买入']:
+                    op = data.get('operation_advice', 'Hold')
+                    if op in ['Buy', 'Add', 'Strong Buy', '买入', '加仓', '强烈买入']:
                         decision_type = 'buy'
-                    elif op in ['卖出', '减仓', '强烈卖出']:
+                    elif op in ['Sell', 'Reduce', 'Strong Sell', '卖出', '减仓', '强烈卖出']:
                         decision_type = 'sell'
                     else:
                         decision_type = 'hold'
@@ -1425,63 +1440,63 @@ class GeminiAnalyzer:
                 return AnalysisResult(
                     code=code,
                     name=name,
-                    # 核心指标
+                    # Core metrics
                     sentiment_score=int(data.get('sentiment_score', 50)),
-                    trend_prediction=data.get('trend_prediction', '震荡'),
-                    operation_advice=data.get('operation_advice', '持有'),
+                    trend_prediction=data.get('trend_prediction', 'Neutral'),
+                    operation_advice=data.get('operation_advice', 'Hold'),
                     decision_type=decision_type,
-                    confidence_level=data.get('confidence_level', '中'),
-                    # 决策仪表盘
+                    confidence_level=data.get('confidence_level', 'Medium'),
+                    # Decision dashboard
                     dashboard=dashboard,
-                    # 走势分析
+                    # Trend analysis
                     trend_analysis=data.get('trend_analysis', ''),
                     short_term_outlook=data.get('short_term_outlook', ''),
                     medium_term_outlook=data.get('medium_term_outlook', ''),
-                    # 技术面
+                    # Technical
                     technical_analysis=data.get('technical_analysis', ''),
                     ma_analysis=data.get('ma_analysis', ''),
                     volume_analysis=data.get('volume_analysis', ''),
                     pattern_analysis=data.get('pattern_analysis', ''),
-                    # 基本面
+                    # Fundamental
                     fundamental_analysis=data.get('fundamental_analysis', ''),
                     sector_position=data.get('sector_position', ''),
                     company_highlights=data.get('company_highlights', ''),
-                    # 情绪面/消息面
+                    # Sentiment / news
                     news_summary=data.get('news_summary', ''),
                     market_sentiment=data.get('market_sentiment', ''),
                     hot_topics=data.get('hot_topics', ''),
-                    # 综合
-                    analysis_summary=data.get('analysis_summary', '分析完成'),
+                    # Composite
+                    analysis_summary=data.get('analysis_summary', 'Analysis complete'),
                     key_points=data.get('key_points', ''),
                     risk_warning=data.get('risk_warning', ''),
                     buy_reason=data.get('buy_reason', ''),
-                    # 元数据
+                    # Metadata
                     search_performed=data.get('search_performed', False),
-                    data_sources=data.get('data_sources', '技术面数据'),
+                    data_sources=data.get('data_sources', 'Technical data'),
                     success=True,
                 )
             else:
-                # 没有找到 JSON，尝试从纯文本中提取信息
-                logger.warning(f"无法从响应中提取 JSON，使用原始文本分析")
+                # No JSON found — fall back to plain-text extraction
+                logger.warning("Could not extract JSON from response, falling back to text analysis")
                 return self._parse_text_response(response_text, code, name)
                 
         except json.JSONDecodeError as e:
-            logger.warning(f"JSON 解析失败: {e}，尝试从文本提取")
+            logger.warning(f"JSON decode error: {e}, falling back to text extraction")
             return self._parse_text_response(response_text, code, name)
     
     def _fix_json_string(self, json_str: str) -> str:
-        """修复常见的 JSON 格式问题"""
+        """Fix common JSON formatting issues."""
         import re
         
-        # 移除注释
+        # Remove comments
         json_str = re.sub(r'//.*?\n', '\n', json_str)
         json_str = re.sub(r'/\*.*?\*/', '', json_str, flags=re.DOTALL)
         
-        # 修复尾随逗号
+        # Fix trailing commas
         json_str = re.sub(r',\s*}', '}', json_str)
         json_str = re.sub(r',\s*]', ']', json_str)
         
-        # 确保布尔值是小写
+        # Ensure boolean literals are lowercase
         json_str = json_str.replace('True', 'true').replace('False', 'false')
         
         # fix by json-repair
@@ -1495,36 +1510,35 @@ class GeminiAnalyzer:
         code: str, 
         name: str
     ) -> AnalysisResult:
-        """从纯文本响应中尽可能提取分析信息"""
-        # 尝试识别关键词来判断情绪
+        """Extract analysis information from a plain-text response as best as possible."""
         sentiment_score = 50
-        trend = '震荡'
-        advice = '持有'
+        trend = 'Neutral'
+        advice = 'Hold'
         
         text_lower = response_text.lower()
         
-        # 简单的情绪识别
-        positive_keywords = ['看多', '买入', '上涨', '突破', '强势', '利好', '加仓', 'bullish', 'buy']
-        negative_keywords = ['看空', '卖出', '下跌', '跌破', '弱势', '利空', '减仓', 'bearish', 'sell']
+        # Simple sentiment detection via keywords
+        positive_keywords = ['bullish', 'buy', 'uptrend', 'breakout', 'strong', 'positive', 'add', '看多', '买入', '上涨', '突破', '强势', '利好', '加仓']
+        negative_keywords = ['bearish', 'sell', 'downtrend', 'breakdown', 'weak', 'negative', 'reduce', '看空', '卖出', '下跌', '跌破', '弱势', '利空', '减仓']
         
         positive_count = sum(1 for kw in positive_keywords if kw in text_lower)
         negative_count = sum(1 for kw in negative_keywords if kw in text_lower)
         
         if positive_count > negative_count + 1:
             sentiment_score = 65
-            trend = '看多'
-            advice = '买入'
+            trend = 'Bullish'
+            advice = 'Buy'
             decision_type = 'buy'
         elif negative_count > positive_count + 1:
             sentiment_score = 35
-            trend = '看空'
-            advice = '卖出'
+            trend = 'Bearish'
+            advice = 'Sell'
             decision_type = 'sell'
         else:
             decision_type = 'hold'
         
-        # 截取前500字符作为摘要
-        summary = response_text[:500] if response_text else '无分析结果'
+        # Use first 500 chars as summary
+        summary = response_text[:500] if response_text else 'No analysis result'
         
         return AnalysisResult(
             code=code,
@@ -1533,10 +1547,10 @@ class GeminiAnalyzer:
             trend_prediction=trend,
             operation_advice=advice,
             decision_type=decision_type,
-            confidence_level='低',
+            confidence_level='Low',
             analysis_summary=summary,
-            key_points='JSON解析失败，仅供参考',
-            risk_warning='分析结果可能不准确，建议结合其他信息判断',
+            key_points='JSON parsing failed, for reference only',
+            risk_warning='Analysis result may be inaccurate; cross-check with other sources',
             raw_response=response_text,
             success=True,
         )
@@ -1547,22 +1561,22 @@ class GeminiAnalyzer:
         delay_between: float = 2.0
     ) -> List[AnalysisResult]:
         """
-        批量分析多只股票
-        
-        注意：为避免 API 速率限制，每次分析之间会有延迟
-        
+        Analyze multiple stocks in batch.
+
+        Note: A delay is inserted between each analysis to avoid API rate limits.
+
         Args:
-            contexts: 上下文数据列表
-            delay_between: 每次分析之间的延迟（秒）
-            
+            contexts: List of context data dicts
+            delay_between: Delay in seconds between each analysis
+
         Returns:
-            AnalysisResult 列表
+            List of AnalysisResult
         """
         results = []
         
         for i, context in enumerate(contexts):
             if i > 0:
-                logger.debug(f"等待 {delay_between} 秒后继续...")
+                logger.debug(f"Waiting {delay_between}s before next analysis...")
                 time.sleep(delay_between)
             
             result = self.analyze(context)
@@ -1571,17 +1585,17 @@ class GeminiAnalyzer:
         return results
 
 
-# 便捷函数
+# Convenience function
 def get_analyzer() -> GeminiAnalyzer:
-    """获取 LLM 分析器实例"""
+    """Return a GeminiAnalyzer instance."""
     return GeminiAnalyzer()
 
 
 if __name__ == "__main__":
-    # 测试代码
+    # Test / smoke-test block
     logging.basicConfig(level=logging.DEBUG)
     
-    # 模拟上下文数据
+    # Simulated context data
     test_context = {
         'code': '600519',
         'date': '2026-01-09',
@@ -1598,7 +1612,7 @@ if __name__ == "__main__":
             'ma20': 1790.0,
             'volume_ratio': 1.2,
         },
-        'ma_status': '多头排列 📈',
+        'ma_status': 'Bullish alignment 📈',
         'volume_change_ratio': 1.3,
         'price_change_ratio': 1.5,
     }
@@ -1606,8 +1620,8 @@ if __name__ == "__main__":
     analyzer = GeminiAnalyzer()
     
     if analyzer.is_available():
-        print("=== AI 分析测试 ===")
+        print("=== AI Analysis Test ===")
         result = analyzer.analyze(test_context)
-        print(f"分析结果: {result.to_dict()}")
+        print(f"Analysis result: {result.to_dict()}")
     else:
-        print("Gemini API 未配置，跳过测试")
+        print("Gemini API not configured, skipping test")
